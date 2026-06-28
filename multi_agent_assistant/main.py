@@ -2,6 +2,7 @@ import sys
 from collections.abc import Callable
 
 from multi_agent_assistant.agents.country_agent import run_country_agent
+from multi_agent_assistant.agents.time_agent import run_time_agent
 from multi_agent_assistant.agents.weather_agent import run_weather_agent
 from multi_agent_assistant.router import RouteDecision, route_request
 
@@ -12,6 +13,7 @@ AgentFunction = Callable[[str], str]
 AGENTS: dict[str, AgentFunction] = {
     "weather": run_weather_agent,
     "country": run_country_agent,
+    "time": run_time_agent,
 }
 
 
@@ -22,6 +24,9 @@ def get_agent_query(agent_key: str, decision: RouteDecision, user_input: str) ->
     if agent_key == "country":
         return decision.country_query or user_input
 
+    if agent_key == "time":
+        return decision.time_query or user_input
+
     return user_input
 
 
@@ -29,14 +34,26 @@ def get_agent_display_name(agent_key: str) -> str:
     names = {
         "weather": "Weather Agent",
         "country": "Country Agent",
+        "time": "Time Agent",
     }
 
     return names.get(agent_key, agent_key.title())
 
 
 def get_agents_to_run(decision: RouteDecision) -> list[str]:
-    if decision.route == "multi":
-        return ["country", "weather"]
+    agents: list[str] = []
+
+    if decision.country_query:
+        agents.append("country")
+
+    if decision.weather_query:
+        agents.append("weather")
+
+    if decision.time_query:
+        agents.append("time")
+
+    if agents:
+        return agents
 
     if decision.route in AGENTS:
         return [decision.route]
@@ -59,12 +76,16 @@ def print_decision_pipeline(user_input: str, decision: RouteDecision) -> None:
     if decision.weather_query:
         print(f"Weather sub-query: {decision.weather_query}")
 
+    if decision.time_query:
+        print(f"Time sub-query: {decision.time_query}")
+
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 
 def main() -> None:
     print("Multi-Agent Assistant running on SupportVectors cluster.")
-    print("Ask about weather, countries, or both. Type quit to exit.")
+    print("Ask about weather, countries, time, or combinations of them.")
+    print("Type quit to exit.")
 
     while True:
         user_input = input("\nAsk: ").strip()
@@ -85,8 +106,10 @@ def main() -> None:
         if not agents_to_run:
             print("\nFinal Answer:")
             print(
-                "I can route weather questions and country-information questions right now. "
-                "Try: 'What is the weather in Tokyo?' or 'Tell me about Japan.'"
+                "I can route weather, country-information, and time questions right now. "
+                "Try: 'What is the weather in Tokyo?', "
+                "'Tell me about Japan.', or "
+                "'What time is it in Tokyo?'"
             )
             continue
 
@@ -106,9 +129,7 @@ def main() -> None:
 
             agent_answer = agent_function(agent_query)
 
-            results.append(
-                f"{agent_name} Result:\n{agent_answer}"
-            )
+            results.append(f"{agent_name} Result:\n{agent_answer}")
 
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
