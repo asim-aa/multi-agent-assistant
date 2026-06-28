@@ -1,35 +1,30 @@
 # Architecture Notes: Multi-Agent Assistant
 
-This document is a deeper technical and conceptual walkthrough of the Multi-Agent Assistant project.
+This document explains the architecture behind the **Multi-Agent Assistant** project: why it is split into multiple files, how the router works, how specialized agents use tools, and how the system evolved from a simple weather agent into a modular three-agent assistant.
 
-The main `README.md` is written for a professional GitHub audience: what the project does, how to run it, and why it matters. This document is different. This file explains how the project evolved, why the files are separated the way they are, what each part is responsible for, and what I learned while building it.
-
-The goal of this project was not just to connect two APIs. The goal was to understand how an AI assistant can be structured as a system of cooperating parts: a router, specialized agents, tools, prompts, and external services.
+The main `README.md` gives a fast professional overview. This document goes deeper. It is written for students, engineers, and reviewers who want to understand the design decisions behind the implementation.
 
 ---
 
-# 1. Project Overview
+## 1. Project Overview
 
-The Multi-Agent Assistant is a Python application that uses an LLM router to decide which specialized agent should handle a user's request.
+The Multi-Agent Assistant is a Python application that uses an LLM-powered router to decide which specialized agent or agents should handle a user's request.
 
-Currently, it supports two agents:
+The current system supports three specialized agents:
 
-* Weather Agent
-* Country Agent
+- **Weather Agent** — retrieves live weather data using the Open-Meteo API.
+- **Country Agent** — retrieves country information using the World Bank Country API.
+- **Time Agent** — retrieves the current local time using Python's built-in `zoneinfo` time zone database.
 
-The Weather Agent retrieves live weather data using the Open-Meteo API.
-
-The Country Agent retrieves country information using the World Bank Country API.
-
-The key feature is that the user does not need to manually choose the agent. The user can ask a natural-language question, and the router decides where the request should go.
+The user does not manually choose an agent. They ask a normal natural-language question, and the router decides how to break it down.
 
 Example:
 
 ```text
-Tell me about Japan and what is the weather in Tokyo?
+Tell me about Japan, what is the weather in Tokyo, and what time is it there?
 ```
 
-The router detects that this is a multi-agent request. It splits the request into two cleaner sub-queries:
+The router identifies three separate tasks and converts the request into clean sub-queries:
 
 ```text
 Country query:
@@ -37,173 +32,130 @@ Tell me about Japan
 
 Weather query:
 What is the weather in Tokyo, Japan?
+
+Time query:
+What time is it in Tokyo, Japan?
 ```
 
-Then the Country Agent handles the country query and the Weather Agent handles the weather query. The system combines both results into one final response.
+Each specialized agent receives only the part of the request it is responsible for. The final answer is then combined into one response.
 
 ---
 
-# 2. High-Level System Flow
-
-The application follows this flow:
+## 2. High-Level Architecture
 
 ```text
-User
-  ↓
-main.py
-  ↓
-router.py
-  ↓
-Selected agent(s)
-  ↓
-Agent-specific tool(s)
-  ↓
-External API
-  ↓
-Structured result
-  ↓
-Agent explanation
-  ↓
-Final combined response
+                         User
+                           │
+                           ▼
+                        main.py
+                           │
+                           ▼
+                    LLM Router Agent
+                           │
+        ┌──────────────────┼──────────────────┐
+        ▼                  ▼                  ▼
+ Country Agent      Weather Agent       Time Agent
+        │                  │                  │
+        ▼                  ▼                  ▼
+ World Bank API      Open-Meteo API      zoneinfo
+        └──────────────────┼──────────────────┘
+                           ▼
+                  Combined Response
 ```
 
-A more detailed view:
+The architecture separates the system into clear layers:
 
-```text
-                    User
-                      │
-                      ▼
-                  main.py
-                      │
-                      ▼
-              LLM Router Agent
-                      │
-        ┌─────────────┴─────────────┐
-        ▼                           ▼
- Country Agent                Weather Agent
-        │                           │
-        ▼                           ▼
- World Bank API              Open-Meteo API
-        └─────────────┬─────────────┘
-                      ▼
-              Combined Response
-```
+- `main.py` controls the application loop and orchestration.
+- `router.py` decides which agent or agents should run.
+- `agents/` contains domain-specific reasoning.
+- `tools/` contains the actual external capability or data retrieval logic.
+- `prompts.py` centralizes system prompts and behavioral instructions.
 
-Each arrow matters:
-
-* The user sends one natural-language request.
-* `main.py` receives the request and controls the program loop.
-* `router.py` decides which agent or agents should run.
-* Each agent receives only the part of the query relevant to its domain.
-* Each agent calls a tool.
-* Each tool calls an external API.
-* The tool returns structured data.
-* The agent explains the result.
-* `main.py` prints the final answer.
+This structure makes the assistant easier to extend, debug, and explain.
 
 ---
 
-# 3. Why This Project Started as a Weather Agent
+## 3. What an Agent Means in This Project
 
-The first version of this project was a simple Weather Agent.
+In this project, an agent is not just an LLM.
 
-The goal was straightforward:
-
-```text
-User enters a city
-  ↓
-LLM receives the request
-  ↓
-LLM calls get_weather()
-  ↓
-Python calls Open-Meteo
-  ↓
-Weather result returns
-  ↓
-LLM explains it
-```
-
-This was useful because it introduced the core agent pattern:
+An agent is a small system made of:
 
 ```text
-LLM + Tool + External API + Final Explanation
+LLM
++
+system prompt
++
+tool schema
++
+tool execution
++
+final explanation
 ```
 
-At this stage, there was only one domain: weather.
+The LLM understands the user's request and decides whether a tool is needed. The tool retrieves or computes the factual data. The LLM then explains the structured result in a user-friendly way.
 
-The first working version helped me understand that the LLM itself does not know the live weather. The LLM is not the source of truth. The tool is the source of truth.
+This separation matters because the LLM is not the source of truth for live information. The tools are.
 
-The LLM's job is to understand the request, decide to call the tool, and explain the tool result.
-
-That distinction became one of the most important lessons in the project.
+For example, the Weather Agent does not invent the current weather. It calls `get_weather()`, which retrieves real weather data from Open-Meteo. The LLM's role is to interpret and explain that result.
 
 ---
 
-# 4. Why the Project Became Multi-Agent
+## 4. Why the Project Became Multi-Agent
 
-After the Weather Agent worked, the next question was:
+The project started as a simple Weather Agent. Once that worked, the next design question was:
 
-What happens when the assistant can do more than one thing?
+> What happens when the assistant can do more than one thing?
 
-For example:
+A weather request needs the Weather Agent:
 
 ```text
 What is the weather in Tokyo?
 ```
 
-is a weather task.
-
-But:
+A country-information request needs the Country Agent:
 
 ```text
 Tell me about Japan.
 ```
 
-is a country-information task.
-
-And:
+A time request needs the Time Agent:
 
 ```text
-Tell me about Japan and what is the weather in Tokyo?
+What time is it in Tokyo?
 ```
 
-contains both.
-
-If the project only had one giant assistant, all the logic would get mixed together. Weather logic, country logic, API calls, prompts, routing, and formatting would all live in one place.
-
-That would make the code difficult to debug and difficult to extend.
-
-The multi-agent structure solves that problem.
-
-Instead of one giant assistant, the project uses:
+A user can also combine all three:
 
 ```text
-Router Agent
-  ↓
-Weather Agent
-  ↓
-Country Agent
+Tell me about Japan, what is the weather in Tokyo, and what time is it there?
 ```
 
-Each specialized agent focuses on one domain.
+If one giant assistant handled everything, weather logic, country logic, time logic, API calls, prompts, routing, and formatting would all be mixed together. That would make the project harder to debug and harder to extend.
 
-The Router Agent does not answer the user directly. It decides who should answer.
+The multi-agent structure solves that problem:
+
+```text
+              Router Agent
+          ┌──────┼──────┐
+          ▼      ▼      ▼
+     Country  Weather  Time
+      Agent    Agent   Agent
+```
+
+Each agent focuses on one domain. The router decides which specialists should run.
 
 ---
 
-# 5. What a Router Agent Does
+## 5. Router Agent
 
-A Router Agent is like a dispatcher.
+The Router Agent is the decision-maker of the system.
 
-It receives the user's request and decides which expert should handle it.
+Its job is not to answer the user's question. Its job is to:
 
-It does not call the weather API.
-
-It does not call the country API.
-
-It does not produce the final answer.
-
-Its job is to classify and delegate.
+1. Understand the user's intent.
+2. Decide which agent or agents should run.
+3. Generate clean sub-queries for each selected agent.
 
 Examples:
 
@@ -212,7 +164,7 @@ User:
 What is the weather in Tokyo?
 
 Router:
-weather
+Weather Agent
 ```
 
 ```text
@@ -220,137 +172,151 @@ User:
 Tell me about Japan.
 
 Router:
-country
+Country Agent
 ```
 
 ```text
 User:
-Tell me about Japan and what is the weather in Tokyo?
+What time is it in Baghdad?
 
 Router:
-multi
+Time Agent
 ```
 
-In this project, the router returns a structured decision object containing:
+For a multi-intent request, the router can select multiple agents:
 
-* route
-* selected agent name
-* reason
-* weather sub-query
-* country sub-query
+```text
+User:
+Tell me about Japan, what is the weather in Tokyo, and what time is it there?
 
-Example router output:
+Router:
+Country Agent
+Weather Agent
+Time Agent
+```
+
+Instead of forwarding the full mixed request to every agent, the router produces structured JSON:
 
 ```json
 {
   "route": "multi",
-  "agent_name": "Weather Agent + Country Agent",
-  "reason": "User requested both country information and weather",
+  "agent_name": "Weather Agent + Country Agent + Time Agent",
+  "reason": "User requested country information, weather, and current time.",
   "country_query": "Tell me about Japan",
-  "weather_query": "What is the weather in Tokyo, Japan?"
+  "weather_query": "What is the weather in Tokyo, Japan?",
+  "time_query": "What time is it in Tokyo, Japan?"
 }
 ```
 
-This is better than simply returning one word because the router also cleans the input for each agent.
-
-Instead of sending the full mixed request to both agents, each agent gets the part it needs.
-
-That was an important fix.
+This was one of the biggest improvements in the project. Each agent receives a focused sub-query instead of having to interpret the entire mixed request.
 
 ---
 
-# 6. Keyword Routing vs LLM Routing
+## 6. Keyword Routing vs. LLM Routing
 
-An early version of the router used keyword matching.
-
-Example:
+The first router used keyword matching:
 
 ```python
 if "weather" in text:
     return "weather"
 ```
 
-This worked for simple questions, but it was limited.
+This worked for simple questions, but it had limitations. Keyword routing struggles with:
 
-It could detect:
+- indirect phrasing
+- multiple intents in one request
+- references like "there"
+- clean sub-query extraction
+- structured task decomposition
 
-```text
-What is the weather in Tokyo?
-```
-
-But it struggled with more flexible natural language.
-
-It also could not reliably extract clean sub-queries.
-
-The improved version uses an LLM Router.
-
-The LLM Router receives the user request and returns structured JSON.
-
-This gives the system more flexibility:
+For example:
 
 ```text
-Tell me about Japan and what is the weather in Tokyo?
+Tell me about Japan, what is the weather in Tokyo, and what time is it there?
 ```
 
-becomes:
+A keyword router may detect words like `weather`, `Japan`, and `time`, but it does not truly understand how to split the request into three independent tasks.
+
+The improved router uses an LLM. The LLM returns structured JSON describing how the application should proceed:
+
+```json
+{
+  "route": "multi",
+  "country_query": "Tell me about Japan",
+  "weather_query": "What is the weather in Tokyo, Japan?",
+  "time_query": "What time is it in Tokyo, Japan?"
+}
+```
+
+The rest of the program can then behave mechanically:
 
 ```text
-route = multi
-country_query = Tell me about Japan
-weather_query = What is the weather in Tokyo, Japan?
+country_query → Country Agent
+weather_query → Weather Agent
+time_query    → Time Agent
 ```
 
-This mirrors a common pattern in agentic systems: using an LLM to classify intent and prepare structured work for downstream components.
-
-The keyword router is still useful as a fallback, but the LLM router is the main routing mechanism.
+The original keyword logic remains as a fallback in case the LLM returns invalid JSON or an unexpected response. This keeps the router flexible while still improving robustness.
 
 ---
 
-# 7. Why `main.py` Exists
+## 7. Why `main.py` Exists
 
-`main.py` is the entry point of the application.
+`main.py` is the application's entry point.
 
-Before having a main file, each agent had to be run separately:
+Before adding it, each agent had to be tested separately:
 
 ```bash
 python -m multi_agent_assistant.agents.weather_agent
 python -m multi_agent_assistant.agents.country_agent
+python -m multi_agent_assistant.agents.time_agent
 ```
 
-That works for testing, but it does not feel like one assistant.
+That is useful during development, but it does not feel like one assistant.
 
-A real assistant should have one entry point:
+A real assistant needs one interface:
 
 ```bash
 python -m multi_agent_assistant.main
 ```
 
-The purpose of `main.py` is to orchestrate the full workflow:
+`main.py` is responsible for orchestration:
 
-1. Ask the user for input.
-2. Send the input to the router.
-3. Display the router's decision.
-4. Execute the selected agent or agents.
-5. Print the final response.
+1. Read user input.
+2. Send the request to the router.
+3. Display the decision pipeline.
+4. Look up the selected agents.
+5. Execute each selected agent.
+6. Collect the responses.
+7. Print the final combined answer.
 
-`main.py` should not contain weather API logic or country API logic.
+`main.py` does **not** call Open-Meteo, the World Bank API, or `zoneinfo` directly. Those responsibilities belong to tools.
 
-It coordinates the system, but it does not do the specialized work.
-
-This makes the program easier to understand:
+The separation is:
 
 ```text
-main.py = application loop and orchestration
-router.py = decision-making
-agents/ = domain reasoning
-tools/ = external API calls
+main.py
+    ↓
+Application orchestration
+
+router.py
+    ↓
+Intent classification and task decomposition
+
+agents/
+    ↓
+Domain-specific reasoning
+
+tools/
+    ↓
+Capability implementation
 ```
 
 ---
 
-# 8. Why an Agent Registry Was Added
+## 8. Agent Registry
 
-An early version of `main.py` used explicit conditional logic:
+An earlier version of `main.py` used a chain of conditionals:
 
 ```python
 if decision.route == "weather":
@@ -359,261 +325,258 @@ if decision.route == "weather":
 elif decision.route == "country":
     run_country_agent(...)
 
-elif decision.route == "multi":
-    run both
+elif decision.route == "time":
+    run_time_agent(...)
 ```
 
-This worked with two agents, but it would become messy as more agents are added.
+This works with a few agents, but it does not scale cleanly.
 
-If the project later includes:
-
-* Currency Agent
-* News Agent
-* Time Zone Agent
-* Travel Agent
-* Book Agent
-
-then a long chain of `if/elif` statements would become harder to maintain.
-
-The improved version uses an agent registry:
+The project now uses an agent registry:
 
 ```python
 AGENTS = {
     "weather": run_weather_agent,
     "country": run_country_agent,
+    "time": run_time_agent,
 }
 ```
 
-This creates a cleaner pattern:
+The execution flow becomes:
 
 ```text
-route key
-  ↓
-lookup agent function
-  ↓
-run selected agent
+Route key
+   ↓
+Agent registry lookup
+   ↓
+Agent function
+   ↓
+Execute agent
 ```
 
-Now adding a new agent becomes more systematic:
+Adding a new agent now follows a repeatable pattern:
 
-1. Create the new agent file.
-2. Create the new tool file.
+1. Create the tool.
+2. Create the specialized agent.
 3. Register the agent in `AGENTS`.
-4. Update the router prompt to know about the new route.
+4. Teach the router about the new route.
 
-This is more scalable than hardcoding every path into `main.py`.
+This keeps the orchestration logic stable even as new capabilities are added.
 
 ---
 
-# 9. Why Tools Are Separate from Agents
+## 9. Why Tools Are Separate from Agents
 
-Tools are responsible for real-world actions.
+A major architectural lesson in this project is that reasoning and execution are different responsibilities.
 
-Agents are responsible for reasoning and explanation.
+Agents reason. Tools execute.
 
-This distinction matters.
-
-The Weather Agent should not contain all the raw `requests.get(...)` logic for Open-Meteo.
-
-The Country Agent should not contain all the raw HTTP handling for the World Bank API.
-
-Instead, each API call lives in the `tools/` folder.
-
-Example:
+The Weather Agent calls a tool:
 
 ```text
 Weather Agent
-  ↓
+      ↓
 get_weather()
-  ↓
+      ↓
 Open-Meteo API
 ```
 
-The tool returns structured data, usually as a Python dictionary.
+The Country Agent follows the same pattern:
 
-The agent receives that dictionary and explains it.
+```text
+Country Agent
+      ↓
+get_country_info()
+      ↓
+World Bank Country API
+```
 
-This separation has several advantages:
+The Time Agent also uses a tool:
 
-* The tool can be tested independently.
-* The agent prompt can change without touching API code.
-* The API implementation can change without rewriting the agent.
-* Multiple agents could reuse the same tool in the future.
+```text
+Time Agent
+      ↓
+get_current_time()
+      ↓
+zoneinfo + timezone lookup
+```
 
-A tool should not be conversational.
+The Time Agent is useful conceptually because it shows that a tool does not have to be an HTTP API wrapper.
 
-A tool should return data.
+A tool is an abstraction over a capability.
 
-The agent turns that data into language.
+Sometimes that capability is an external API. Sometimes it is local Python functionality. As long as the tool accepts input and returns structured output, the agent does not need to care how the tool works internally.
 
 ---
 
-# 10. Why Tools Return Dictionaries
+## 10. Why Tools Return Structured Data
 
-The tools in this project return dictionaries instead of full natural-language responses.
+Tools return structured Python dictionaries instead of full English paragraphs.
 
-For example, a weather tool might return:
+For example, the Time Tool can return fields like:
 
 ```python
 {
-    "searched_for": "Tokyo, Japan",
-    "matched_location": {
-        "name": "Tokyo",
-        "state_or_region": "Tokyo",
-        "country": "Japan"
-    },
-    "current_weather": {
-        "temperature_2m": 71.1,
-        "apparent_temperature": 77.1,
-        "precipitation": 0.012,
-        "wind_speed_10m": 3.0
-    }
+    "location": "Tokyo, Japan",
+    "timezone": "Asia/Tokyo",
+    "current_time": "04:10",
+    "date": "2026-06-29",
+    "weekday": "Monday",
+    "utc_offset": "+09:00"
 }
 ```
 
-This is better than returning:
-
-```text
-The weather in Tokyo is 71 degrees...
-```
-
-because structured data gives the agent more flexibility.
+This is better than returning a prewritten sentence because structured data is easier to reuse, inspect, debug, and format.
 
 The agent can decide:
 
-* what to summarize
-* how to format the answer
-* whether to mention missing fields
-* how to combine the result with another agent's response
+- what to include
+- how to explain it
+- how to handle missing values
+- how to format the final response
 
-Returning dictionaries also makes debugging easier because the raw tool output is inspectable.
-
----
-
-# 11. Why Prompts Are Separate
-
-Prompts live in `prompts.py`.
-
-This was an intentional design decision.
-
-At first, it is tempting to write prompts directly inside each agent file. That works for small scripts, but prompts often change more frequently than code.
-
-Keeping prompts separate makes it easier to:
-
-* edit instructions
-* compare versions
-* keep agent files cleaner
-* centralize behavior definitions
-* avoid mixing business logic with prompt text
-
-The project uses different prompts for different roles:
-
-* Weather Agent prompt
-* Country Agent prompt
-* Router Agent prompt
-
-This reinforces the idea that each component has its own responsibility.
-
-The router prompt focuses on classification and sub-query extraction.
-
-The weather prompt focuses on weather interpretation.
-
-The country prompt focuses on explaining country data.
+The tool retrieves facts. The agent turns those facts into language.
 
 ---
 
-# 12. Why Agents Should Not Call Each Other Directly
+## 11. Why Prompts Are Separate
 
-One design rule I wanted to preserve is that agents should not directly call each other.
+Prompts live in `prompts.py` instead of being scattered across the codebase.
 
-For example, the Weather Agent should not call the Country Agent.
+This keeps prompts easier to edit, compare, and maintain.
 
-The Country Agent should not call the Weather Agent.
-
-That would create a tangled system where control flow becomes difficult to follow.
-
-Instead, `main.py` and `router.py` coordinate which agents run.
-
-This keeps the architecture clean:
+Each component has a different job, so each component needs different instructions:
 
 ```text
-Router decides.
-main.py executes.
-Agents specialize.
-Tools retrieve.
+Router prompt
+    ↓
+Intent classification and sub-query extraction
+
+Weather prompt
+    ↓
+Weather tool usage and explanation
+
+Country prompt
+    ↓
+Country tool usage and explanation
+
+Time prompt
+    ↓
+Time tool usage and explanation
 ```
 
-Each layer has a clear responsibility.
+The larger lesson is:
 
-If agents start calling other agents directly, the system becomes harder to debug because it is no longer obvious who is responsible for what.
+> Different responsibilities deserve different prompts.
+
+Trying to force one enormous system prompt to perform every task usually leads to more complicated instructions, more edge cases, and lower maintainability.
 
 ---
 
-# 13. Message Flow Through the System
+## 12. Why Agents Should Not Call Each Other Directly
 
-A simplified message flow looks like this:
+The agents in this project are intentionally independent.
+
+The Weather Agent does not call the Country Agent. The Country Agent does not call the Time Agent. The Time Agent does not call the Weather Agent.
+
+Coordination happens through the Router Agent and `main.py`.
 
 ```text
-User input:
-Tell me about Japan and what is the weather in Tokyo?
+User
+   ↓
+main.py
+   ↓
+Router Agent
+   ├── Country Agent
+   ├── Weather Agent
+   └── Time Agent
 ```
 
-`main.py` sends this to the router.
+This keeps the control flow easy to understand.
 
-The router returns:
+- The router decides what should run.
+- `main.py` executes the selected agents.
+- Each agent solves only its assigned task.
+- Each tool retrieves or computes the needed data.
+
+This matters because adding the Time Agent did not require rewriting the Weather Agent or Country Agent. The new capability was added by creating a new tool, creating a new agent, registering it, and updating the router.
+
+That is the benefit of modular architecture.
+
+---
+
+## 13. Message Flow Through the System
+
+Suppose the user asks:
 
 ```text
-route = multi
-country_query = Tell me about Japan
-weather_query = What is the weather in Tokyo, Japan?
+Tell me about Japan, what is the weather in Tokyo, and what time is it there?
 ```
 
-`main.py` sees that this is a multi-agent request.
-
-It runs:
+The request flows through the system like this:
 
 ```text
-Country Agent with:
+User
+   ↓
+main.py
+   ↓
+LLM Router
+   ↓
+Country Agent
+Weather Agent
+Time Agent
+   ↓
+Tools
+   ↓
+Combined Response
+```
+
+The router first breaks the request into smaller tasks:
+
+```text
+Country query:
 Tell me about Japan
-```
 
-and:
-
-```text
-Weather Agent with:
+Weather query:
 What is the weather in Tokyo, Japan?
+
+Time query:
+What time is it in Tokyo, Japan?
 ```
 
-Each agent creates messages for the LLM.
+Each specialized agent receives only its own sub-query. Each agent calls its tool if needed, explains the result, and returns a response.
 
-The LLM may call a tool.
+Finally, `main.py` combines the agent responses into one final answer.
 
-The tool returns data.
-
-The agent explains the data.
-
-`main.py` combines the two agent responses.
-
-This entire chain is visible in the terminal through the decision pipeline:
+The terminal also displays the decision pipeline:
 
 ```text
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Decision Pipeline
-User request: Tell me about Japan and what is the weather in Tokyo?
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Router decision: multi
-Selected agent(s): Weather Agent + Country Agent
-Country sub-query: Tell me about Japan
-Weather sub-query: What is the weather in Tokyo, Japan?
+
+Country Agent
+✓ Selected
+
+Weather Agent
+✓ Selected
+
+Time Agent
+✓ Selected
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-This visible trace makes the system easier to understand and debug.
+This makes the system easier to debug because the user can see how the request was routed before the final answer appears.
 
 ---
 
-# 14. OpenAI-Compatible Client Design
+## 14. OpenAI-Compatible Client Design
 
-The project uses the OpenAI Python SDK, but it does not have to use OpenAI's servers.
+One design goal was to avoid being tied to a single AI provider.
 
-The client is configured with:
+The application uses the OpenAI Python SDK, but the model can come from many different places.
+
+The client is configured with environment variables:
 
 ```python
 client = OpenAI(
@@ -622,297 +585,255 @@ client = OpenAI(
 )
 ```
 
-This means the backend can be swapped by changing environment variables.
+This means the same code can connect to:
 
-Examples:
+- OpenAI
+- Azure OpenAI
+- Ollama
+- vLLM
+- Together AI
+- SupportVectors AI Cluster
 
-```env
-LLM_API_BASE=https://api.openai.com/v1
-LLM_API_KEY=your_openai_key
-LLM_MODEL=gpt-4o-mini
-```
+Only the values in `.env` need to change.
 
-or:
+This taught me an important architectural lesson:
 
-```env
-LLM_API_BASE=http://10.0.10.51:8000/v1
-LLM_API_KEY=dummy-key
-LLM_MODEL=openai/gpt-oss-20b
-```
+> Good application design separates application logic from infrastructure.
 
-The first could point to OpenAI.
-
-The second could point to a local or private OpenAI-compatible endpoint such as a vLLM server or SupportVectors cluster.
-
-This makes the project provider-agnostic.
-
-The code does not need to care where the model is hosted as long as the endpoint follows the same chat completions interface.
+The agents, router, prompts, and tools remain the same regardless of which OpenAI-compatible endpoint is used.
 
 ---
 
-# 15. Development Story
+## 15. Development Timeline
 
-This project evolved in stages.
+This project grew gradually rather than being built all at once.
 
-## Version 1: Single Weather Agent
+### Version 1 — Weather Agent
 
-The first version only handled weather.
+Built a simple Weather Agent that could call the Open-Meteo API through tool calling.
 
-It proved that a model could call a Python function, which then called a real external API.
-
-The key lesson was:
-
-```text
-The LLM explains.
-The tool retrieves.
-```
-
-## Version 2: Modular Weather Agent
-
-The weather project was split into multiple files:
-
-```text
-weather_agent.py
-weather_tools.py
-prompts.py
-```
-
-This made the code much easier to reason about.
-
-The agent controlled the workflow.
-
-The tool handled the API.
-
-The prompt controlled the behavior.
-
-## Version 3: Multi-Agent Folder Structure
-
-The project was reorganized into:
-
-```text
-agents/
-tools/
-router.py
-main.py
-prompts.py
-```
-
-This made the architecture ready for multiple agents.
-
-## Version 4: Country Agent
-
-A second agent was added using the World Bank API.
-
-This gave the router two real specialists to choose between.
-
-At this point, the system was no longer just a weather bot. It became a small multi-agent assistant.
-
-## Version 5: Keyword Router
-
-A simple router used keyword matching to choose between weather and country tasks.
-
-This worked but was too rigid.
-
-## Version 6: LLM Router
-
-The keyword router was upgraded into an LLM router.
-
-The LLM router could detect multi-agent requests and produce clean sub-queries.
-
-This made the system feel much more intelligent.
-
-## Version 7: Visible Decision Pipeline
-
-The terminal UI was improved to show:
-
-* user request
-* router decision
-* selected agents
-* generated sub-queries
-* agent execution
-
-This made the internal workflow understandable to the user.
-
-## Version 8: Agent Registry
-
-The main program was refactored to use an agent registry.
-
-This made the system easier to extend because new agents can be registered without rewriting the entire control flow.
+**Lesson:** The LLM explains the data, but the tool retrieves it.
 
 ---
 
-# 16. Problems Encountered
+### Version 2 — Modular Design
 
-## API Reliability
+Split the project into separate agent, tool, and prompt files.
 
-Not every free API behaved the way I expected.
+**Lesson:** Separating responsibilities makes the code much easier to maintain.
 
-The original idea was to add a Stock Agent using a free stock price API. That turned out to be more complicated because many stock APIs require keys, enforce strict rate limits, or reject unauthenticated requests.
+---
 
-This taught me an important lesson:
+### Version 3 — Country Agent
 
-```text
-Agent architecture and API logistics are separate problems.
-```
+Added a second specialized agent using the World Bank Country API.
 
-The architecture was working, but the data provider was not reliable enough for a beginner-friendly no-key demo.
+**Lesson:** One assistant can delegate work to multiple specialists.
 
-I switched to the World Bank Country API because it was simpler and better suited for learning router-agent design.
+---
 
-## Location Ambiguity
+### Version 4 — Router Agent
 
-Weather APIs can struggle with ambiguous locations.
+Introduced a router to decide which agent should handle each request.
+
+**Lesson:** Routing should be separated from domain reasoning.
+
+---
+
+### Version 5 — LLM Router
+
+Replaced simple keyword matching with an LLM router that returns structured routing decisions and clean sub-queries.
+
+**Lesson:** LLMs can be used for task decomposition, not just final answers.
+
+---
+
+### Version 6 — Agent Registry
+
+Introduced an agent registry so new agents can be added without rewriting the application's control flow.
+
+**Lesson:** Good architecture should make future expansion straightforward.
+
+---
+
+### Version 7 — Time Agent
+
+Added a third specialized agent capable of retrieving the current local time for a location.
+
+**Lesson:** Tools do not always have to call web APIs. They simply provide capabilities that agents can use.
+
+---
+
+### Version 8 — Decision Pipeline
+
+Added a visible routing pipeline to the terminal so users can see how requests move through the system.
+
+**Lesson:** Showing the execution path makes the architecture easier to understand and debug.
+
+---
+
+## 16. Challenges and Lessons Learned
+
+### Choosing Reliable APIs
+
+The original plan was to build a Stock Agent.
+
+Although the routing architecture worked, finding a free, reliable stock API was more difficult than expected because of authentication requirements, rate limits, and changing endpoints.
+
+Rather than forcing an unreliable dependency into the project, I replaced it with the Country Agent.
+
+This reinforced an important lesson:
+
+> A good architecture should not depend on one specific external service.
+
+---
+
+### Handling Ambiguous Locations
+
+Weather and time queries depend on correctly identifying locations.
 
 For example:
+
+```text
+Tokyo
+```
+
+or
 
 ```text
 Dublin
 ```
 
-could refer to Dublin, Ireland or Dublin, California.
+can refer to multiple places.
 
-The weather tool needed better location normalization and alias handling.
-
-This showed me that tools often need preprocessing logic before calling an external API.
-
-The LLM can help generate cleaner queries, but the tool still needs defensive code.
-
-## Prompt Output Control
-
-The router needed to return valid JSON.
-
-That required a strict router prompt.
-
-If the router returned markdown or extra prose, the program would fail to parse the response.
-
-This taught me that when LLMs are used inside software systems, output formatting matters.
-
-The model is not just chatting. It is producing structured data that downstream code depends on.
-
----
-
-# 17. Lessons Learned
-
-The biggest lesson from this project is that an AI agent is not just an LLM.
-
-An agentic system is a composition of parts:
+To improve accuracy, the router generates cleaner sub-queries such as:
 
 ```text
-LLM
-+
-tools
-+
-control flow
-+
-state/messages
-+
-external data
-+
-routing
+What is the weather in Tokyo, Japan?
 ```
 
-The LLM is only one piece.
+The weather tool then performs additional location matching before requesting data.
 
-The architecture around the LLM is what makes the system reliable and extensible.
-
-I also learned that modularity matters early. Even when a project seems small, separating responsibilities makes it much easier to grow.
-
-The difference between a toy chatbot and a more serious agent project is not always the number of features. It is often the structure.
-
-A simple project with a clean router, tools, agents, prompts, and execution flow can teach more than a larger project with everything inside one file.
+This showed me that reliable tools often need preprocessing and validation in addition to API calls.
 
 ---
 
-# 18. How I Would Improve This Further
+### Structured LLM Output
 
-## Add More Agents
+The Router Agent communicates with the rest of the application using JSON.
 
-Possible additions:
+That means the output must follow a predictable format.
 
-* Currency Agent
-* Time Zone Agent
-* News Agent
-* Book Search Agent
-* Travel Agent
+This taught me that when an LLM is part of a software system, its output is not just conversation. It is data that other parts of the program depend on.
+
+Prompting the router to produce consistent structured output became a key part of making the application reliable.
+
+---
+
+## 17. Design Trade-offs
+
+This architecture intentionally favors modularity over simplicity.
+
+For a small project, three agents, a router, tools, prompts, and an agent registry may seem like more structure than necessary.
+
+That trade-off was intentional.
+
+Advantages:
+
+- easier to add new agents
+- cleaner separation of responsibilities
+- simpler debugging
+- reusable tools
+- clearer architecture for portfolio review
+
+Disadvantages:
+
+- more files
+- more boilerplate
+- more message passing
+- slightly more latency for multi-agent requests
+
+For a single-purpose script, this architecture would be excessive. For learning how modular AI systems work, it is exactly the kind of structure worth practicing.
+
+---
+
+## 18. Future Improvements
+
+The project is fully functional, but there are several directions I would explore next.
+
+### Add More Agents
+
+Possible additions include:
+
+- Currency Agent
+- News Agent
+- Public Holiday Agent
+- Travel Agent
+- Book Search Agent
 
 Each new agent would follow the same pattern:
 
 ```text
-agent file
-tool file
-prompt
-router update
-registry update
+Tool
+   ↓
+Agent
+   ↓
+Router update
+   ↓
+Agent registry
 ```
-
-## Add Async Execution
-
-Currently, multiple agents run sequentially.
-
-For a multi-agent request, the Country Agent runs first, then the Weather Agent runs.
-
-In the future, these could run in parallel using `asyncio`.
-
-That would make multi-agent responses faster.
-
-## Add Logging
-
-A logging layer would make it easier to inspect:
-
-* router decisions
-* tool calls
-* API responses
-* errors
-* execution time
-
-## Add Evaluation
-
-The router could be tested with a dataset of example user inputs.
-
-Example:
-
-```text
-"What is the weather in Tokyo?" → weather
-"Tell me about Iraq" → country
-"Tell me about Japan and the weather in Tokyo" → multi
-```
-
-This would help measure routing accuracy.
-
-## Add a Web UI
-
-A Streamlit or FastAPI interface would make the project easier to demo visually.
-
-The terminal version is useful for development, but a web UI would be stronger for presentation.
 
 ---
 
-# 19. Final Reflection
+### Run Agents in Parallel
 
-This project started as a simple weather script.
+Currently, if multiple agents are selected, they execute one after another.
 
-It became a way to understand the deeper architecture behind AI agents.
+In the future, I would use `asyncio` so independent agents can run at the same time.
 
-The most important shift was moving from thinking:
+---
+
+### Build a Web Interface
+
+The terminal interface is useful for learning and debugging.
+
+A Streamlit or FastAPI web app would make the project easier to demo visually.
+
+---
+
+### Add Conversation Memory
+
+Right now, each request is independent.
+
+Conversation memory would allow the assistant to understand follow-up questions more naturally.
+
+---
+
+## 19. Final Reflection
+
+This project began as a simple Weather Agent.
+
+It became an exercise in understanding how AI applications are designed as systems.
+
+The biggest shift in my thinking was moving from:
 
 ```text
-How do I make one chatbot answer everything?
+How do I build one assistant that does everything?
 ```
 
-to thinking:
+to:
 
 ```text
-How do I design a system where specialized components cooperate?
+How do I build a system where specialized components work together?
 ```
 
-That shift changed how I think about building AI applications.
+That change influenced every architectural decision in the project.
 
-A good agent system is not just about prompting a model well. It is about designing clear boundaries:
+Instead of creating one large assistant, I built a system where each component has a clear responsibility:
 
-* the router decides
-* the agent reasons
-* the tool retrieves
-* the external API provides facts
-* the main program orchestrates
+- The router decides.
+- The agents reason.
+- The tools retrieve information.
+- The main application orchestrates everything.
 
-Once those boundaries are clear, the project becomes easier to extend, easier to debug, and easier to explain.
+This project taught me that good AI systems are not only about choosing the right model. They are also about designing clean, modular software that is easy to understand, extend, and maintain.
