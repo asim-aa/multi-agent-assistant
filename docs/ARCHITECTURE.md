@@ -521,9 +521,10 @@ main.py
    ↓
 LLM Router
    ↓
-Country Agent
-Weather Agent
-Time Agent
+Selected Agents
+   ├── Country Agent
+   ├── Weather Agent
+   └── Time Agent
    ↓
 Tools
    ↓
