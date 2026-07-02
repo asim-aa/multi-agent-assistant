@@ -15,7 +15,7 @@ US_STATE_ALIASES: dict[str, str] = {
 }
 
 
-LOCATION_ALIASES: dict[str, str] = {
+COMMON_LOCATION_ALIASES: dict[str, str] = {
     "tokyo": "Tokyo, Tokyo, Japan",
     "tokyo japan": "Tokyo, Tokyo, Japan",
     "tokyo, japan": "Tokyo, Tokyo, Japan",
@@ -49,11 +49,16 @@ LOCATION_ALIASES: dict[str, str] = {
 COUNTRY_ALIASES: dict[str, str] = {
     "usa": "united states",
     "us": "united states",
+    "u.s.": "united states",
+    "u.s.a.": "united states",
     "united states of america": "united states",
     "united states": "united states",
     "japan": "japan",
+    "jp": "japan",
     "ireland": "ireland",
+    "ie": "ireland",
     "india": "india",
+    "in": "india",
 }
 
 
@@ -139,6 +144,7 @@ def get_weather(location: str) -> dict[str, Any]:
                 "state_or_region": place.get("admin1"),
                 "country": place.get("country"),
                 "country_code": place.get("country_code"),
+                "population": place.get("population"),
             }
             for place in results[:10]
         ]
@@ -211,6 +217,13 @@ def get_weather(location: str) -> dict[str, Any]:
             "country_code": selected_place.get("country_code"),
             "latitude": latitude,
             "longitude": longitude,
+            "population": selected_place.get("population"),
+            "location_match_score": score_location(
+                place=selected_place,
+                city=city,
+                state_or_region=state_or_region,
+                country=country,
+            ),
         },
         "current_weather": current_weather,
         "units": weather_data.get("current_units"),
@@ -233,11 +246,11 @@ def normalize_location_query(location: str) -> str:
     normal_key = cleaned.lower()
     compact_key = normal_key.replace(" ", "")
 
-    if normal_key in LOCATION_ALIASES:
-        return LOCATION_ALIASES[normal_key]
+    if normal_key in COMMON_LOCATION_ALIASES:
+        return COMMON_LOCATION_ALIASES[normal_key]
 
-    if compact_key in LOCATION_ALIASES:
-        return LOCATION_ALIASES[compact_key]
+    if compact_key in COMMON_LOCATION_ALIASES:
+        return COMMON_LOCATION_ALIASES[compact_key]
 
     return cleaned
 
@@ -248,47 +261,85 @@ def choose_best_location(
     state_or_region: str,
     country: str,
 ) -> dict[str, Any] | None:
+    if not results:
+        return None
+
+    scored_results = [
+        (
+            score_location(
+                place=place,
+                city=city,
+                state_or_region=state_or_region,
+                country=country,
+            ),
+            get_population_score(place),
+            place,
+        )
+        for place in results
+    ]
+
+    scored_results.sort(
+        key=lambda item: (
+            item[0],
+            item[1],
+        ),
+        reverse=True,
+    )
+
+    best_score, _, best_place = scored_results[0]
+
+    if best_score <= 0:
+        return None
+
+    return best_place
+
+
+def score_location(
+    place: dict[str, Any],
+    city: str,
+    state_or_region: str,
+    country: str,
+) -> int:
+    score = 0
+
+    place_name = str(place.get("name", "")).strip().lower()
+    place_state = normalize_state(str(place.get("admin1", "")))
+    place_country = normalize_country(str(place.get("country", "")))
+    place_country_code = normalize_country(str(place.get("country_code", "")))
+
     city_clean = city.strip().lower()
     state_clean = normalize_state(state_or_region)
     country_clean = normalize_country(country)
 
-    filtered = results
+    if place_name == city_clean:
+        score += 50
 
-    if country_clean:
-        country_filtered = [
-            place
-            for place in filtered
-            if normalize_country(str(place.get("country", ""))) == country_clean
-            or normalize_country(str(place.get("country_code", ""))) == country_clean
-        ]
+    if country_clean and (
+        place_country == country_clean or place_country_code == country_clean
+    ):
+        score += 40
 
-        if country_filtered:
-            filtered = country_filtered
+    if state_clean and place_state == state_clean:
+        score += 30
 
-    if state_clean:
-        state_filtered = [
-            place
-            for place in filtered
-            if normalize_state(str(place.get("admin1", ""))) == state_clean
-        ]
+    score += get_population_score(place)
 
-        if state_filtered:
-            filtered = state_filtered
-        elif country_clean:
-            return filtered[0] if filtered else None
-        else:
-            return None
+    return score
 
-    exact_city_matches = [
-        place
-        for place in filtered
-        if str(place.get("name", "")).lower() == city_clean
-    ]
 
-    if exact_city_matches:
-        return exact_city_matches[0]
+def get_population_score(place: dict[str, Any]) -> int:
+    population = place.get("population")
 
-    return filtered[0] if filtered else None
+    if not isinstance(population, int):
+        return 0
+
+    if population > 1_000_000:
+        return 10
+
+    if population > 100_000:
+        return 5
+
+    return 0
 
 
 def parse_weather_code(value: Any) -> int | None:
