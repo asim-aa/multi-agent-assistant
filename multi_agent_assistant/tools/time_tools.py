@@ -1,32 +1,81 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-
 CITY_TIMEZONES = {
-    "tokyo": "Asia/Tokyo",
-    "tokyo, japan": "Asia/Tokyo",
+    # Asia — Japan
     "japan": "Asia/Tokyo",
-    "new york": "America/New_York",
-    "new york, usa": "America/New_York",
-    "los angeles": "America/Los_Angeles",
-    "los angeles, usa": "America/Los_Angeles",
-    "san francisco": "America/Los_Angeles",
-    "san francisco, usa": "America/Los_Angeles",
-    "dublin": "Europe/Dublin",
-    "dublin, ireland": "Europe/Dublin",
-    "london": "Europe/London",
-    "london, uk": "Europe/London",
-    "paris": "Europe/Paris",
-    "paris, france": "Europe/Paris",
-    "berlin": "Europe/Berlin",
-    "berlin, germany": "Europe/Berlin",
-    "baghdad": "Asia/Baghdad",
-    "baghdad, iraq": "Asia/Baghdad",
+    "tokyo": "Asia/Tokyo",
+    "tokyo japan": "Asia/Tokyo",
+    "tokyo, japan": "Asia/Tokyo",
+
+    # Asia — India
+    "india": "Asia/Kolkata",
+
+    "bangalore": "Asia/Kolkata",
+    "bangalore india": "Asia/Kolkata",
+    "bangalore, india": "Asia/Kolkata",
+    "bangalore karnataka india": "Asia/Kolkata",
+    "bangalore, karnataka, india": "Asia/Kolkata",
+
+    "bengaluru": "Asia/Kolkata",
+    "bengaluru india": "Asia/Kolkata",
+    "bengaluru, india": "Asia/Kolkata",
+    "bengaluru karnataka india": "Asia/Kolkata",
+    "bengaluru, karnataka, india": "Asia/Kolkata",
+
+    # Asia — Middle East
     "iraq": "Asia/Baghdad",
+    "baghdad": "Asia/Baghdad",
+    "baghdad iraq": "Asia/Baghdad",
+    "baghdad, iraq": "Asia/Baghdad",
+
     "dubai": "Asia/Dubai",
+    "dubai uae": "Asia/Dubai",
     "dubai, uae": "Asia/Dubai",
+    "dubai united arab emirates": "Asia/Dubai",
+    "dubai, united arab emirates": "Asia/Dubai",
+
     "riyadh": "Asia/Riyadh",
+    "riyadh saudi arabia": "Asia/Riyadh",
     "riyadh, saudi arabia": "Asia/Riyadh",
+
+    # Europe
+    "dublin": "Europe/Dublin",
+    "dublin ireland": "Europe/Dublin",
+    "dublin, ireland": "Europe/Dublin",
+
+    "london": "Europe/London",
+    "london uk": "Europe/London",
+    "london, uk": "Europe/London",
+    "london united kingdom": "Europe/London",
+    "london, united kingdom": "Europe/London",
+
+    "paris": "Europe/Paris",
+    "paris france": "Europe/Paris",
+    "paris, france": "Europe/Paris",
+
+    "berlin": "Europe/Berlin",
+    "berlin germany": "Europe/Berlin",
+    "berlin, germany": "Europe/Berlin",
+
+    # North America — United States
+    "new york": "America/New_York",
+    "new york usa": "America/New_York",
+    "new york, usa": "America/New_York",
+    "new york united states": "America/New_York",
+    "new york, united states": "America/New_York",
+
+    "los angeles": "America/Los_Angeles",
+    "los angeles usa": "America/Los_Angeles",
+    "los angeles, usa": "America/Los_Angeles",
+    "los angeles united states": "America/Los_Angeles",
+    "los angeles, united states": "America/Los_Angeles",
+
+    "san francisco": "America/Los_Angeles",
+    "san francisco usa": "America/Los_Angeles",
+    "san francisco, usa": "America/Los_Angeles",
+    "san francisco united states": "America/Los_Angeles",
+    "san francisco, united states": "America/Los_Angeles",
 }
 
 

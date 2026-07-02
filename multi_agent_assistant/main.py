@@ -12,6 +12,27 @@ from multi_agent_assistant.router import RouteDecision, route_request
 AgentFunction = Callable[[str], str]
 
 
+@dataclass(frozen=True)
+class ValidationReport:
+    passed: bool
+    warnings: list[str]
+
+
+def validate_agent_results(results: list[tuple[str, str]]) -> ValidationReport:
+    warnings: list[str] = []
+    
+    if not results:
+        warnings.append("No agent results to validate.")
+    
+    for agent_name, agent_answer in results:
+        if not agent_answer or not agent_answer.strip():
+            warnings.append(f"{agent_name} returned empty result.")
+        if "failed" in agent_answer.lower() or "error" in agent_answer.lower():
+            warnings.append(f"{agent_name} may have encountered an error.")
+    
+    return ValidationReport(passed=len(warnings) == 0, warnings=warnings)
+
+
 AGENTS: dict[str, AgentFunction] = {
     "weather": run_weather_agent,
     "country": run_country_agent,
@@ -96,11 +117,11 @@ def build_agent_tasks(
     return tasks
 
 
-def run_agent_tasks_parallel(tasks: list[AgentTask]) -> list[str]:
+def run_agent_tasks_parallel(tasks: list[AgentTask]) -> list[tuple[str, str]]:
     if not tasks:
         return []
 
-    results_by_key: dict[str, str] = {}
+    results_by_key: dict[str, tuple[str, str]] = {}
 
     with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
         future_to_task: dict[Future[str], AgentTask] = {
@@ -119,9 +140,9 @@ def run_agent_tasks_parallel(tasks: list[AgentTask]) -> list[str]:
                     f"{type(error).__name__}: {error}"
                 )
 
-            results_by_key[task.key] = f"{task.name} Result:\n{agent_answer}"
+            results_by_key[task.key] = (task.name, agent_answer)
 
-    ordered_results: list[str] = []
+    ordered_results: list[tuple[str, str]] = []
 
     for task in tasks:
         result = results_by_key.get(task.key)
@@ -151,6 +172,30 @@ def print_decision_pipeline(user_input: str, decision: RouteDecision) -> None:
         print(f"Time sub-query: {decision.time_query}")
 
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+
+def print_validation_layer(results: list[tuple[str, str]]) -> None:
+    validation_report = validate_agent_results(results)
+
+    print("\nValidation Layer")
+    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+    if validation_report.passed:
+        print("✓ All agent outputs passed validation.")
+    else:
+        print("⚠ Validation warnings found:")
+
+        for warning in validation_report.warnings:
+            print(f"- {warning}")
+
+    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+
+def format_final_answer(results: list[tuple[str, str]]) -> str:
+    return "\n\n".join(
+        f"{agent_name} Result:\n{agent_answer}"
+        for agent_name, agent_answer in results
+    )
 
 
 def main() -> None:
@@ -207,7 +252,9 @@ def main() -> None:
 
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-        answer = "\n\n".join(results)
+        print_validation_layer(results)
+
+        answer = format_final_answer(results)
 
         print("\nFinal Answer:")
         print(answer)
