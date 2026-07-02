@@ -1,5 +1,7 @@
 import sys
 from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 
 from multi_agent_assistant.agents.country_agent import run_country_agent
 from multi_agent_assistant.agents.time_agent import run_time_agent
@@ -15,6 +17,14 @@ AGENTS: dict[str, AgentFunction] = {
     "country": run_country_agent,
     "time": run_time_agent,
 }
+
+
+@dataclass(frozen=True)
+class AgentTask:
+    key: str
+    name: str
+    query: str
+    function: AgentFunction
 
 
 def get_agent_query(agent_key: str, decision: RouteDecision, user_input: str) -> str:
@@ -59,6 +69,67 @@ def get_agents_to_run(decision: RouteDecision) -> list[str]:
         return [decision.route]
 
     return []
+
+
+def build_agent_tasks(
+    agents_to_run: list[str],
+    decision: RouteDecision,
+    user_input: str,
+) -> list[AgentTask]:
+    tasks: list[AgentTask] = []
+
+    for agent_key in agents_to_run:
+        agent_function = AGENTS.get(agent_key)
+
+        if agent_function is None:
+            continue
+
+        tasks.append(
+            AgentTask(
+                key=agent_key,
+                name=get_agent_display_name(agent_key),
+                query=get_agent_query(agent_key, decision, user_input),
+                function=agent_function,
+            )
+        )
+
+    return tasks
+
+
+def run_agent_tasks_parallel(tasks: list[AgentTask]) -> list[str]:
+    if not tasks:
+        return []
+
+    results_by_key: dict[str, str] = {}
+
+    with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
+        future_to_task: dict[Future[str], AgentTask] = {
+            executor.submit(task.function, task.query): task
+            for task in tasks
+        }
+
+        for future in as_completed(future_to_task):
+            task = future_to_task[future]
+
+            try:
+                agent_answer = future.result()
+            except Exception as error:
+                agent_answer = (
+                    f"{task.name} failed with "
+                    f"{type(error).__name__}: {error}"
+                )
+
+            results_by_key[task.key] = f"{task.name} Result:\n{agent_answer}"
+
+    ordered_results: list[str] = []
+
+    for task in tasks:
+        result = results_by_key.get(task.key)
+
+        if result is not None:
+            ordered_results.append(result)
+
+    return ordered_results
 
 
 def print_decision_pipeline(user_input: str, decision: RouteDecision) -> None:
@@ -113,23 +184,26 @@ def main() -> None:
             )
             continue
 
-        results: list[str] = []
+        tasks = build_agent_tasks(
+            agents_to_run=agents_to_run,
+            decision=decision,
+            user_input=user_input,
+        )
+
+        if not tasks:
+            print("\nFinal Answer:")
+            print("No valid agent tasks could be created.")
+            continue
 
         print("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        print("Executing Agents")
+        print("Executing Agents in Parallel")
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-        for agent_key in agents_to_run:
-            agent_name = get_agent_display_name(agent_key)
-            agent_query = get_agent_query(agent_key, decision, user_input)
-            agent_function = AGENTS[agent_key]
+        for task in tasks:
+            print(f"✓ {task.name} started")
+            print(f"  Query: {task.query}")
 
-            print(f"✓ {agent_name} running")
-            print(f"  Query: {agent_query}")
-
-            agent_answer = agent_function(agent_query)
-
-            results.append(f"{agent_name} Result:\n{agent_answer}")
+        results = run_agent_tasks_parallel(tasks)
 
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
