@@ -14,6 +14,9 @@ It can be used through either a terminal interface or a polished Tkinter desktop
 
 Although this project was developed using the **SupportVectors AI Cluster**, the architecture is provider-agnostic and works with any OpenAI-compatible endpoint, including OpenAI, Azure OpenAI, Ollama, vLLM, Together AI, and similar services.
 
+## Architecture Overview
+
+![AI Agents Glossary ADK Pipeline](docs/architecture.png)
 ---
 
 # Features
