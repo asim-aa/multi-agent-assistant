@@ -1,22 +1,25 @@
 # 🤖 Multi-Agent Assistant
 
-A modular multi-agent AI assistant built in Python using an OpenAI-compatible Large Language Model (LLM), function calling, and specialized AI agents.
+A practical multi-agent AI assistant built in Python using an OpenAI-compatible Large Language Model (LLM), function calling, external tools, parallel execution, output validation, and a desktop GUI.
 
-Instead of relying on one monolithic prompt, this project demonstrates how an agentic system can decompose a user's request into specialized tasks, route those tasks to domain-specific agents, retrieve live information through tools, and combine the results into one coherent response.
+Instead of relying on one monolithic prompt, this project demonstrates how an agentic application can decompose a user's request into specialized tasks, route those tasks to domain-specific agents, retrieve live information from external APIs or local tools, validate the outputs, and combine the results into one coherent response.
 
 The assistant currently supports three specialized agents:
 
-* 🌦️ Weather Agent
-* 🌍 Country Agent
-* 🕒 Time Agent
+* 🌦️ **Weather Agent**
+* 🌍 **Country Agent**
+* 🕒 **Time Agent**
 
-It can be used through either a terminal interface or a polished Tkinter desktop GUI.
+It can be used through either a terminal interface or a Tkinter desktop GUI.
 
 Although this project was developed using the **SupportVectors AI Cluster**, the architecture is provider-agnostic and works with any OpenAI-compatible endpoint, including OpenAI, Azure OpenAI, Ollama, vLLM, Together AI, and similar services.
 
+---
+
 ## Architecture Overview
 
-![AI Agents Glossary ADK Pipeline](docs/architecture.png)
+![Multi-Agent Assistant Architecture](docs/architecture.png)
+
 ---
 
 # Features
@@ -25,14 +28,17 @@ Although this project was developed using the **SupportVectors AI Cluster**, the
 * 🌦️ **Weather Agent** powered by the Open-Meteo API
 * 🌍 **Country Agent** powered by the World Bank Country API
 * 🕒 **Time Agent** powered by Python's `zoneinfo`
+* ⚡ **Parallel agent execution** for independent multi-agent requests
+* ✅ **Validation layer** that checks agent outputs before final response generation
 * 🖥️ **Tkinter Desktop GUI** for interacting with the assistant outside the terminal
 * 🔧 OpenAI Function / Tool Calling
 * 🤖 Multi-agent orchestration
 * 🧩 Agent registry for cleaner plug-and-play expansion
 * 📦 Modular architecture following the Single Responsibility Principle
 * 🔄 Provider-agnostic OpenAI-compatible client
-* 🗺️ Improved location normalization for ambiguous names such as `Bangalore` → `Bengaluru`
+* 🗺️ Improved location disambiguation using aliases, country matching, state/region matching, and population scoring
 * 🌦️ Weather-code descriptions that translate raw Open-Meteo codes into readable conditions such as `3 → Overcast`
+* 🧪 Unit tests with `pytest`
 
 ---
 
@@ -41,7 +47,7 @@ Although this project was developed using the **SupportVectors AI Cluster**, the
 ## User Request
 
 ```text
-Tell me about Japan, what is the weather in Tokyo, and what time is it there?
+Tell me about India, what is the weather in Bangalore, and what is the current time there?
 ```
 
 ## Router Decision
@@ -50,13 +56,13 @@ Tell me about Japan, what is the weather in Tokyo, and what time is it there?
 Intent: Multi-Agent
 
 Country Query:
-Tell me about Japan
+Tell me about India
 
 Weather Query:
-What is the weather in Tokyo, Japan?
+What is the weather in Bangalore, India?
 
 Time Query:
-What time is it in Tokyo, Japan?
+What time is it in Bangalore, India?
 ```
 
 ## Execution Pipeline
@@ -76,6 +82,9 @@ What time is it in Tokyo, Japan?
  World Bank   Open-Meteo    zoneinfo
       └───────────┼───────────┘
                   ▼
+           Validation Layer
+                  │
+                  ▼
           Combined Response
 ```
 
@@ -85,9 +94,11 @@ The assistant:
 
 * retrieves country information from the World Bank API
 * retrieves live weather from Open-Meteo
+* normalizes ambiguous city names such as `Bangalore` → `Bengaluru`
 * translates weather condition codes into readable descriptions
 * retrieves the local time using Python's time zone database
-* combines all results into a single natural-language response
+* validates agent outputs before producing the final response
+* combines all results into a single natural-language answer
 
 ---
 
@@ -101,7 +112,7 @@ The project supports two ways to interact with the assistant.
 python -m multi_agent_assistant.main
 ```
 
-This runs the assistant directly in the terminal and displays the routing pipeline, selected agents, sub-queries, and final answer.
+The terminal version displays the router decision, selected agents, sub-queries, parallel execution status, validation result, and final answer.
 
 ## Desktop GUI
 
@@ -109,9 +120,9 @@ This runs the assistant directly in the terminal and displays the routing pipeli
 python -m multi_agent_assistant.main_gui
 ```
 
-This launches a Tkinter desktop window where users can enter prompts and view a styled decision pipeline and final response.
+The GUI launches a Tkinter desktop window where users can enter prompts and view a styled decision pipeline and final response.
 
-The GUI uses the same backend architecture as the terminal version. It does not duplicate agent logic. It is simply another interface layer on top of the router, agents, and tools.
+The GUI uses the same backend architecture as the terminal version. It does not duplicate agent logic. It is an interface layer on top of the router, agents, tools, and orchestration code.
 
 ---
 
@@ -137,6 +148,12 @@ The GUI uses the same backend architecture as the terminal version. It does not 
  World Bank API      Open-Meteo API      zoneinfo
         └──────────────────┼──────────────────┘
                            ▼
+                 Parallel Execution
+                           │
+                           ▼
+                  Validation Layer
+                           │
+                           ▼
                   Combined Response
 ```
 
@@ -152,13 +169,20 @@ multi-agent-assistant/
 ├── .env.example
 │
 ├── docs/
-│   └── ARCHITECTURE.md
+│   ├── ARCHITECTURE.md
+│   └── architecture.png
+│
+├── tests/
+│   ├── test_weather_tools.py
+│   ├── test_time_tools.py
+│   └── test_validator.py
 │
 └── multi_agent_assistant/
-    ├── main.py              # Terminal entry point
+    ├── main.py              # Terminal entry point and orchestration
     ├── main_gui.py          # Tkinter desktop GUI entry point
     ├── router.py            # LLM router and task decomposition
     ├── prompts.py           # Centralized system prompts
+    ├── validators.py        # Output validation layer
     │
     ├── agents/
     │   ├── weather_agent.py
@@ -188,16 +212,16 @@ Examples:
 
 Rather than answering the question itself, the router extracts clean sub-queries and delegates work to the appropriate agents.
 
-Example:
+Example router output:
 
 ```json
 {
   "route": "multi",
   "agent_name": "Weather Agent + Country Agent + Time Agent",
   "reason": "User requested country information, weather, and current time.",
-  "country_query": "Tell me about Japan",
-  "weather_query": "What is the weather in Tokyo, Japan?",
-  "time_query": "What time is it in Tokyo, Japan?"
+  "country_query": "Tell me about India",
+  "weather_query": "What is the weather in Bangalore, India?",
+  "time_query": "What time is it in Bangalore, India?"
 }
 ```
 
@@ -226,7 +250,7 @@ Agents do not communicate directly with one another. Coordination happens throug
 
 ## Tool Calling
 
-Instead of relying only on the model's internal knowledge, agents retrieve information using tools.
+Instead of relying only on the model's internal knowledge, agents retrieve information using external APIs or local tools.
 
 Current tools include:
 
@@ -234,7 +258,7 @@ Current tools include:
 * World Bank Country API
 * Python `zoneinfo`
 
-This approach reduces hallucinations because live or factual information comes from tools rather than from the model's memory.
+This reduces hallucinations because live or factual information comes from tools rather than from the model's memory.
 
 The Weather Tool also normalizes ambiguous city names and adds readable weather descriptions. For example:
 
@@ -242,6 +266,89 @@ The Weather Tool also normalizes ambiguous city names and adds readable weather 
 Bangalore, India → Bengaluru, Karnataka, India
 weather_code 3 → Overcast
 ```
+
+---
+
+## Parallel Agent Execution
+
+When a request requires multiple agents, the application runs independent agent tasks in parallel using `ThreadPoolExecutor`.
+
+For example, this user request:
+
+```text
+Tell me about India, what is the weather in Bangalore, and what is the current time there?
+```
+
+can be decomposed into three independent tasks:
+
+```text
+Country Agent → India country information
+Weather Agent → Bangalore/Bengaluru weather
+Time Agent → Bangalore/India local time
+```
+
+Because these tasks do not depend on each other, they can run concurrently instead of sequentially.
+
+This improves the architecture from:
+
+```text
+Country Agent → Weather Agent → Time Agent
+```
+
+to:
+
+```text
+              ┌→ Country Agent
+Router Agent ─┼→ Weather Agent
+              └→ Time Agent
+```
+
+---
+
+## Validation Layer
+
+After the agents complete, their outputs pass through a lightweight validation layer before the final answer is printed.
+
+The validation layer checks for issues such as:
+
+* empty agent responses
+* tool failure messages
+* missing weather details
+* missing country details
+* missing time-zone details
+* unknown weather codes or incomplete results
+
+This creates a stronger pipeline:
+
+```text
+Router → Parallel Agents → Validation Layer → Final Answer
+```
+
+The validation layer is intentionally lightweight and deterministic. It is not an adversarial reviewer or revision loop; this project focuses on practical tool orchestration rather than content critique.
+
+---
+
+## Location Disambiguation
+
+The Weather Tool includes improved location handling for ambiguous city names.
+
+It combines:
+
+* common aliases
+* city matching
+* country matching
+* state/region matching
+* population-based scoring
+
+This allows the assistant to better handle cases such as:
+
+```text
+Bangalore → Bengaluru, Karnataka, India
+Dublin, CA → Dublin, California, United States
+Tokyo → Tokyo, Tokyo, Japan
+```
+
+The alias dictionary is used as a small normalization layer, while the scoring logic handles more general geocoding disambiguation.
 
 ---
 
@@ -275,6 +382,7 @@ The project intentionally separates responsibilities across multiple modules.
 * `router.py` performs LLM-based routing.
 * `agents/` contains domain-specific reasoning.
 * `tools/` communicates with external services or local capabilities.
+* `validators.py` checks agent outputs before final response generation.
 * `prompts.py` centralizes system prompts.
 
 This architecture makes the system easier to maintain, debug, and extend as additional agents are introduced.
@@ -362,6 +470,31 @@ The assistant should route the request to:
 
 ---
 
+# Testing
+
+Run the test suite with:
+
+```bash
+python -m pytest -q
+```
+
+The tests cover:
+
+* weather-code parsing
+* location normalization
+* country and state normalization
+* location scoring and disambiguation
+* validation-layer behavior
+* time-tool behavior
+
+Example successful output:
+
+```text
+22 passed
+```
+
+---
+
 # Technologies
 
 * Python
@@ -371,9 +504,11 @@ The assistant should route the request to:
 * Tkinter
 * Requests
 * Python-dotenv
+* Pytest
 * Open-Meteo API
 * World Bank Country API
 * Python `zoneinfo`
+* `ThreadPoolExecutor`
 
 ---
 
@@ -381,23 +516,28 @@ The assistant should route the request to:
 
 ```text
 Ask:
-Tell me about Japan, what is the weather in Tokyo, and what time is it there?
+Tell me about India, what is the weather in Bangalore, and what is the current time there?
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Decision Pipeline
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Router decision: multi
 Selected agent(s): Weather Agent + Country Agent + Time Agent
-Country sub-query: Tell me about Japan
-Weather sub-query: What is the weather in Tokyo, Japan?
-Time sub-query: What time is it in Tokyo, Japan?
+Country sub-query: Tell me about India
+Weather sub-query: What is the weather in Bangalore, India?
+Time sub-query: What time is it in Bangalore, India?
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Executing Agents
+Executing Agents in Parallel
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✓ Country Agent running
-✓ Weather Agent running
-✓ Time Agent running
+✓ Country Agent started
+✓ Weather Agent started
+✓ Time Agent started
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Validation Layer
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ All agent outputs passed validation.
 
 Final Answer:
 
@@ -415,13 +555,13 @@ Current local time retrieved using Python zoneinfo.
 
 # Future Improvements
 
-* Parallel agent execution with `asyncio`
 * Conversation memory
 * Streaming responses
 * Docker deployment
 * FastAPI or Streamlit web interface
 * Router evaluation suite
 * Logging and telemetry
+* Async-native implementation using `asyncio`
 * Additional agents such as Currency, News, Travel, and Public Holidays
 
 ---
@@ -434,7 +574,7 @@ For a detailed walkthrough of the architecture, design decisions, implementation
 docs/ARCHITECTURE.md
 ```
 
-This document explains the reasoning behind the project, including router agents, function calling, modular architecture, prompt organization, message flow, tool design, and future scalability.
+This document explains the reasoning behind the project, including router agents, function calling, modular architecture, prompt organization, message flow, tool design, validation, parallel execution, and future scalability.
 
 ---
 
